@@ -1,6 +1,6 @@
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from gtts import gTTS
 import io
 from dotenv import load_dotenv
@@ -22,6 +22,21 @@ if not TOKEN:
     logger.error("Помилка: api_tg не знайдено в .env файлі")
     raise ValueError("api_tg не встановлено")
 
+# Доступні мови
+LANGUAGES = {
+    'uk': 'Українська',
+    'en': 'English',
+    'ru': 'Я ПІДАРАС-Я ПІДАРАС ХА-ХА Я ЛЮБЛЮ ВЕЛИКІ .'
+}
+
+# Функція для створення клавіатури вибору мови
+def get_language_keyboard():
+    keyboard = [
+        [InlineKeyboardButton(LANGUAGES[lang], callback_data=f"lang_{lang}")]
+        for lang in LANGUAGES
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 # Функція для конвертації тексту в аудіо в пам'яті
 def text_to_speech(text, lang='uk'):
     try:
@@ -39,9 +54,31 @@ def text_to_speech(text, lang='uk'):
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привіт! Я бот, який перетворює текст у аудіо. Просто надішли мені текст, і я надішлю тобі аудіофайл!"
+    user_lang = context.user_data.get('language', 'uk')
+    welcome_text = (
+        "Привіт! Я бот, який перетворює текст у аудіо. "
+        f"Поточна мова: {LANGUAGES[user_lang]}. "
+        "Обери мову для аудіо нижче і надішли текст!"
     )
+    await update.message.reply_text(
+        welcome_text,
+        reply_markup=get_language_keyboard()
+    )
+
+# Обробка вибору мови
+async def handle_language_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # Отримуємо код мови з callback_data (наприклад, "lang_uk")
+    selected_lang = query.data.split('_')[1]
+    if selected_lang in LANGUAGES:
+        context.user_data['language'] = selected_lang
+        await query.message.reply_text(
+            f"Обрано мову: {LANGUAGES[selected_lang]}. Надішли текст для конвертації!"
+        )
+    else:
+        await query.message.reply_text("Невідома мова. Спробуй ще раз!")
 
 # Обробка текстових повідомлень
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -50,8 +87,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Будь ласка, надішли текст!")
         return
 
+    # Отримуємо мову з user_data або використовуємо українську за замовчуванням
+    lang = context.user_data.get('language', 'uk')
+
     # Генерація аудіо в пам'яті
-    audio_buffer = text_to_speech(text, lang='uk')
+    audio_buffer = text_to_speech(text, lang=lang)
     if audio_buffer:
         try:
             await update.message.reply_audio(audio=audio_buffer)
@@ -75,6 +115,7 @@ def main():
     # Додаємо обробники
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(CallbackQueryHandler(handle_language_selection, pattern="^lang_"))
     application.add_error_handler(error_handler)
 
     # Запускаємо бота
