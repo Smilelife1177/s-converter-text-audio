@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from gtts import gTTS
 import io
@@ -29,6 +29,11 @@ LANGUAGES = {
     'ru': 'Я ПІДАРАС-Я ПІДАРАС ХА-ХА Я ЛЮБЛЮ ВЕЛИКІ .'
 }
 
+# Функція для створення постійної клавіатури
+def get_persistent_keyboard():
+    keyboard = [[KeyboardButton("Змінити мову")]]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+
 # Функція для створення клавіатури вибору мови
 def get_language_keyboard():
     keyboard = [
@@ -56,13 +61,13 @@ def text_to_speech(text, lang='uk'):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = context.user_data.get('language', 'uk')
     welcome_text = (
-        "Привіт! Я бот, який перетворює текст у аудіо. "
+        "Привіт! Я бот, який перетворює текст у аудіо. 🎙️ "
         f"Поточна мова: {LANGUAGES[user_lang]}. "
-        "Обери мову для аудіо нижче і надішли текст!"
+        "Обери мову або надішли текст!"
     )
     await update.message.reply_text(
         welcome_text,
-        reply_markup=get_language_keyboard()
+        reply_markup=get_persistent_keyboard()
     )
 
 # Обробка вибору мови
@@ -75,16 +80,30 @@ async def handle_language_selection(update: Update, context: ContextTypes.DEFAUL
     if selected_lang in LANGUAGES:
         context.user_data['language'] = selected_lang
         await query.message.reply_text(
-            f"Обрано мову: {LANGUAGES[selected_lang]}. Надішли текст для конвертації!"
+            f"Обрано мову: {LANGUAGES[selected_lang]}. Надішли текст для конвертації!",
+            reply_markup=get_persistent_keyboard()
         )
     else:
-        await query.message.reply_text("Невідома мова. Спробуй ще раз!")
+        await query.message.reply_text(
+            "Невідома мова. Спробуй ще раз!",
+            reply_markup=get_persistent_keyboard()
+        )
 
 # Обробка текстових повідомлень
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    if text == "Змінити мову":
+        await update.message.reply_text(
+            "Обери мову:",
+            reply_markup=get_language_keyboard()
+        )
+        return
+
     if not text:
-        await update.message.reply_text("Будь ласка, надішли текст!")
+        await update.message.reply_text(
+            "Будь ласка, надішли текст!",
+            reply_markup=get_persistent_keyboard()
+        )
         return
 
     # Отримуємо мову з user_data або використовуємо українську за замовчуванням
@@ -94,19 +113,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     audio_buffer = text_to_speech(text, lang=lang)
     if audio_buffer:
         try:
-            await update.message.reply_audio(audio=audio_buffer)
+            await update.message.reply_audio(
+                audio=audio_buffer,
+                reply_markup=get_persistent_keyboard()
+            )
             audio_buffer.close()  # Закриваємо буфер
         except Exception as e:
             logger.error(f"Помилка при надсиланні аудіо: {e}")
-            await update.message.reply_text("Вибач, сталася помилка при надсиланні аудіо.")
+            await update.message.reply_text(
+                "Вибач, сталася помилка при надсиланні аудіо.",
+                reply_markup=get_persistent_keyboard()
+            )
     else:
-        await update.message.reply_text("Вибач, не вдалося згенерувати аудіо. Спробуй ще раз!")
+        await update.message.reply_text(
+            "Вибач, не вдалося згенерувати аудіо. Спробуй ще раз!",
+            reply_markup=get_persistent_keyboard()
+        )
 
 # Обробка помилок
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Помилка: {context.error}")
     if update and update.message:
-        await update.message.reply_text("Сталася помилка. Спробуй ще раз!")
+        await update.message.reply_text(
+            "Сталася помилка. Спробуй ще раз!",
+            reply_markup=get_persistent_keyboard()
+        )
 
 def main():
     # Створюємо додаток
