@@ -2,8 +2,12 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from gtts import gTTS
+import io
+from dotenv import load_dotenv
 import os
-import uuid
+
+# Завантажуємо змінні оточення з .env файлу
+load_dotenv()
 
 # Налаштування логування
 logging.basicConfig(
@@ -12,16 +16,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Токен вашого бота (замініть на свій)
-TOKEN = "YOUR_BOT_TOKEN_HERE"
+# Отримуємо токен бота з змінної оточення
+TOKEN = os.getenv("api_tg")
+if not TOKEN:
+    logger.error("Помилка: api_tg не знайдено в .env файлі")
+    raise ValueError("api_tg не встановлено")
 
-# Функція для конвертації тексту в аудіо
+# Функція для конвертації тексту в аудіо в пам'яті
 def text_to_speech(text, lang='uk'):
     try:
         tts = gTTS(text=text, lang=lang, slow=False)
-        filename = f"audio_{uuid.uuid4()}.mp3"
-        tts.save(filename)
-        return filename
+        # Створюємо буфер у пам'яті
+        audio_buffer = io.BytesIO()
+        tts.write_to_fp(audio_buffer)
+        audio_buffer.seek(0)
+        # Задаємо ім'я файлу для Telegram
+        audio_buffer.name = 'audio.mp3'
+        return audio_buffer
     except Exception as e:
         logger.error(f"Помилка при генерації аудіо: {e}")
         return None
@@ -39,13 +50,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Будь ласка, надішли текст!")
         return
 
-    # Генерація аудіо
-    audio_file = text_to_speech(text, lang='uk')
-    if audio_file and os.path.exists(audio_file):
+    # Генерація аудіо в пам'яті
+    audio_buffer = text_to_speech(text, lang='uk')
+    if audio_buffer:
         try:
-            with open(audio_file, 'rb') as audio:
-                await update.message.reply_audio(audio=audio)
-            os.remove(audio_file)  # Видаляємо тимчасовий файл
+            await update.message.reply_audio(audio=audio_buffer)
+            audio_buffer.close()  # Закриваємо буфер
         except Exception as e:
             logger.error(f"Помилка при надсиланні аудіо: {e}")
             await update.message.reply_text("Вибач, сталася помилка при надсиланні аудіо.")
